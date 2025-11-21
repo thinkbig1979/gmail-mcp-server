@@ -48,7 +48,7 @@ class GmailMCPServer {
     this.server = new Server(
       {
         name: 'gmail-mcp-server',
-        version: '1.0.0',
+        version: '1.1.0',
       },
       {
         capabilities: {
@@ -275,6 +275,93 @@ class GmailMCPServer {
             type: 'object',
             properties: {}
           }
+        },
+        {
+          name: 'create_label',
+          description: 'Create a new Gmail label',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              name: {
+                type: 'string',
+                description: 'Name of the label to create'
+              },
+              label_list_visibility: {
+                type: 'string',
+                description: 'Visibility in label list (show, hide, show_if_unread)',
+                default: 'show'
+              },
+              message_list_visibility: {
+                type: 'string',
+                description: 'Visibility in message list (show, hide)',
+                default: 'show'
+              }
+            },
+            required: ['name']
+          }
+        },
+        {
+          name: 'delete_label',
+          description: 'Delete a Gmail label',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              label_id: {
+                type: 'string',
+                description: 'ID of the label to delete'
+              }
+            },
+            required: ['label_id']
+          }
+        },
+        {
+          name: 'update_label',
+          description: 'Update a Gmail label name or visibility',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              label_id: {
+                type: 'string',
+                description: 'ID of the label to update'
+              },
+              name: {
+                type: 'string',
+                description: 'New name for the label (optional)',
+                optional: true
+              },
+              label_list_visibility: {
+                type: 'string',
+                description: 'Visibility in label list (show, hide, show_if_unread)',
+                optional: true
+              },
+              message_list_visibility: {
+                type: 'string',
+                description: 'Visibility in message list (show, hide)',
+                optional: true
+              }
+            },
+            required: ['label_id']
+          }
+        },
+        {
+          name: 'remove_labels',
+          description: 'Remove labels from emails',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              message_ids: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Array of Gmail message IDs'
+              },
+              label_ids: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Array of label IDs to remove'
+              }
+            },
+            required: ['message_ids', 'label_ids']
+          }
         }
       ]
     }));
@@ -304,6 +391,14 @@ class GmailMCPServer {
             return await this.markAsRead(args);
           case 'add_labels':
             return await this.addLabels(args);
+          case 'remove_labels':
+            return await this.removeLabels(args);
+          case 'create_label':
+            return await this.createLabel(args);
+          case 'delete_label':
+            return await this.deleteLabel(args);
+          case 'update_label':
+            return await this.updateLabel(args);
           case 'create_draft':
             return await this.createDraft(args as unknown as SendEmailRequest);
           case 'get_auth_url':
@@ -423,12 +518,13 @@ class GmailMCPServer {
     }
 
     const summary = `# Gmail Search Results\n\n**Query**: "${query}"\n**Found**: ${searchResults.length} emails\n\n` +
-      searchResults.map((email, index) => 
+      searchResults.map((email, index) =>
         `## ${index + 1}. ${email.subject}\n` +
         `**From**: ${email.from}\n` +
         `**Date**: ${email.date}\n` +
         `**Preview**: ${email.snippet}\n` +
-        `**ID**: ${email.id}\n`
+        `**ID**: ${email.id} (Message ID)\n` +
+        `**Thread ID**: ${email.threadId} (use this for get_email_thread)\n`
       ).join('\n');
 
     return {
@@ -465,37 +561,51 @@ class GmailMCPServer {
   private async getEmailThread(args: any) {
     const threadId = args.thread_id;
 
-    const response = await this.gmail.users.threads.get({
-      userId: 'me',
-      id: threadId
-    });
+    try {
+      const response = await this.gmail.users.threads.get({
+        userId: 'me',
+        id: threadId,
+        format: 'full'
+      });
 
-    const thread = response.data;
-    const messages = thread.messages || [];
-    
-    let threadSummary = `# Email Thread\n\n**Thread ID**: ${threadId}\n**Messages**: ${messages.length}\n\n`;
+      const thread = response.data;
+      const messages = thread.messages || [];
 
-    for (let i = 0; i < messages.length; i++) {
-      const email = await this.parseEmailMessage(messages[i], true);
-      threadSummary += `## Message ${i + 1}\n`;
-      threadSummary += `**From**: ${email.from}\n`;
-      threadSummary += `**To**: ${email.to}\n`;
-      threadSummary += `**Date**: ${email.date}\n`;
-      threadSummary += `**Subject**: ${email.subject}\n\n`;
-      if (email.body) {
-        threadSummary += `**Content**:\n${email.body.substring(0, 500)}${email.body.length > 500 ? '...' : ''}\n\n`;
-      }
-      threadSummary += '---\n\n';
-    }
+      let threadSummary = `# Email Thread\n\n**Thread ID**: ${threadId}\n**Messages**: ${messages.length}\n\n`;
 
-    return {
-      content: [
-        {
-          type: 'text',
-          text: threadSummary
+      for (let i = 0; i < messages.length; i++) {
+        const email = await this.parseEmailMessage(messages[i], true);
+        threadSummary += `## Message ${i + 1}\n`;
+        threadSummary += `**From**: ${email.from}\n`;
+        threadSummary += `**To**: ${email.to}\n`;
+        threadSummary += `**Date**: ${email.date}\n`;
+        threadSummary += `**Subject**: ${email.subject}\n\n`;
+        if (email.body) {
+          threadSummary += `**Content**:\n${email.body.substring(0, 2000)}${email.body.length > 2000 ? '...' : ''}\n\n`;
         }
-      ]
-    };
+        threadSummary += '---\n\n';
+      }
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: threadSummary
+          }
+        ]
+      };
+    } catch (error: any) {
+      // Provide helpful error message if thread ID is invalid
+      if (error?.code === 404 || error?.message?.includes('not found')) {
+        throw new Error(
+          `Thread not found with ID: ${threadId}\n\n` +
+          `Note: Make sure you're using the THREAD ID (not MESSAGE ID).\n` +
+          `In search results, look for the "Thread:" field, not the "ID:" field.\n` +
+          `Example: If search shows "ID: abc123" and "Thread: xyz789", use "xyz789" as thread_id.`
+        );
+      }
+      throw error;
+    }
   }
 
   private async markAsRead(args: any) {
@@ -540,6 +650,120 @@ class GmailMCPServer {
         {
           type: 'text',
           text: `✅ Added labels to ${messageIds.length} email(s)`
+        }
+      ]
+    };
+  }
+
+  private async removeLabels(args: any) {
+    const messageIds: string[] = args.message_ids;
+    const labelIds: string[] = args.label_ids;
+
+    for (const messageId of messageIds) {
+      await this.gmail.users.messages.modify({
+        userId: 'me',
+        id: messageId,
+        requestBody: {
+          removeLabelIds: labelIds
+        }
+      });
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `✅ Removed labels from ${messageIds.length} email(s)`
+        }
+      ]
+    };
+  }
+
+  private async createLabel(args: any) {
+    const name: string = args.name;
+    const labelListVisibility = args.label_list_visibility || 'labelShow';
+    const messageListVisibility = args.message_list_visibility || 'show';
+
+    // Map user-friendly values to Gmail API values
+    const visibilityMap: { [key: string]: string } = {
+      'show': 'labelShow',
+      'hide': 'labelHide',
+      'show_if_unread': 'labelShowIfUnread'
+    };
+
+    const response = await this.gmail.users.labels.create({
+      userId: 'me',
+      requestBody: {
+        name: name,
+        labelListVisibility: visibilityMap[labelListVisibility] || labelListVisibility,
+        messageListVisibility: messageListVisibility
+      }
+    });
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `✅ Label created successfully!\n\n**Name**: ${response.data.name}\n**ID**: ${response.data.id}\n**Type**: ${response.data.type || 'user'}`
+        }
+      ]
+    };
+  }
+
+  private async deleteLabel(args: any) {
+    const labelId: string = args.label_id;
+
+    // Prevent deletion of system labels
+    const systemLabels = ['INBOX', 'SPAM', 'TRASH', 'UNREAD', 'STARRED', 'IMPORTANT', 'SENT', 'DRAFT', 'CATEGORY_PERSONAL', 'CATEGORY_SOCIAL', 'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS'];
+
+    if (systemLabels.includes(labelId)) {
+      throw new Error(`Cannot delete system label: ${labelId}`);
+    }
+
+    await this.gmail.users.labels.delete({
+      userId: 'me',
+      id: labelId
+    });
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `✅ Label deleted successfully: ${labelId}`
+        }
+      ]
+    };
+  }
+
+  private async updateLabel(args: any) {
+    const labelId: string = args.label_id;
+    const name: string | undefined = args.name;
+    const labelListVisibility = args.label_list_visibility;
+    const messageListVisibility = args.message_list_visibility;
+
+    // Map user-friendly values to Gmail API values
+    const visibilityMap: { [key: string]: string } = {
+      'show': 'labelShow',
+      'hide': 'labelHide',
+      'show_if_unread': 'labelShowIfUnread'
+    };
+
+    const requestBody: any = {};
+    if (name) requestBody.name = name;
+    if (labelListVisibility) requestBody.labelListVisibility = visibilityMap[labelListVisibility] || labelListVisibility;
+    if (messageListVisibility) requestBody.messageListVisibility = messageListVisibility;
+
+    const response = await this.gmail.users.labels.update({
+      userId: 'me',
+      id: labelId,
+      requestBody: requestBody
+    });
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `✅ Label updated successfully!\n\n**Name**: ${response.data.name}\n**ID**: ${response.data.id}`
         }
       ]
     };
@@ -650,17 +874,36 @@ class GmailMCPServer {
   }
 
   private extractEmailBody(payload: any): string {
-    if (!payload) return '';
+    if (!payload) return 'Body content not available';
 
-    // Simple text extraction - handles basic cases
+    // Direct body data
     if (payload.body?.data) {
       return Buffer.from(payload.body.data, 'base64').toString('utf-8');
     }
 
+    // Multi-part messages
     if (payload.parts) {
+      // First try to find text/plain
       for (const part of payload.parts) {
         if (part.mimeType === 'text/plain' && part.body?.data) {
           return Buffer.from(part.body.data, 'base64').toString('utf-8');
+        }
+      }
+
+      // If no text/plain, try text/html
+      for (const part of payload.parts) {
+        if (part.mimeType === 'text/html' && part.body?.data) {
+          return Buffer.from(part.body.data, 'base64').toString('utf-8');
+        }
+      }
+
+      // Recursively check nested parts (e.g., multipart/alternative)
+      for (const part of payload.parts) {
+        if (part.parts) {
+          const nestedBody = this.extractEmailBody(part);
+          if (nestedBody !== 'Body content not available') {
+            return nestedBody;
+          }
         }
       }
     }

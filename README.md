@@ -4,6 +4,24 @@ Connect your Gmail to Claude Code! Read, send, search, and manage emails directl
 
 > **⚠️ Important**: This gives Claude access to your Gmail. Only use with accounts you trust Claude to access.
 
+## 📋 What's New in v1.1.0
+
+### 🏷️ Complete Label Management
+- **Create labels**: Create custom Gmail labels/folders
+- **Delete labels**: Remove labels you no longer need
+- **Update labels**: Rename labels or change visibility settings
+- **Remove labels**: Remove labels from specific emails
+
+### 🔧 Improved Error Handling
+- **Clearer Thread ID guidance**: Better error messages when Message ID is used instead of Thread ID
+- **Enhanced body extraction**: Improved email body parsing for complex multi-part messages (handles nested parts, HTML fallback)
+- **Better search results**: Thread ID now clearly displayed in search results with usage hints
+
+### 🎯 Enhanced Features
+- Increased thread body preview from 500 to 2000 characters
+- Added helpful notes in search results to distinguish Message ID from Thread ID
+- Improved error messages with actionable guidance
+
 ---
 
 ## 🤖 Recommended: Ask Claude to Help You Install This
@@ -224,12 +242,24 @@ Edit `~/.claude.json` and add:
 
 Once installed, try these commands:
 
+### Email Reading & Search
 - "Read my unread emails"
 - "Search for emails from john@company.com"
-- "Create a draft email to sarah@example.com"
 - "Show me emails about the project"
+- "Get the full thread for this email"
+
+### Email Management
+- "Create a draft email to sarah@example.com"
+- "Send an email to..."
 - "Mark these emails as read"
+
+### Label Management (New in v1.1.0!)
 - "What are my Gmail labels?"
+- "Create a new label called 'Important Projects'"
+- "Add the 'Follow-up' label to these emails"
+- "Remove labels from these emails"
+- "Update the label name from 'Old' to 'New'"
+- "Delete the 'Archive' label"
 
 ## 🔒 Security & Privacy
 
