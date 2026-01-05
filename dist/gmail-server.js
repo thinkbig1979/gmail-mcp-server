@@ -3,13 +3,20 @@
  * Gmail MCP Server - Comprehensive Gmail integration for Claude Code
  * @tszaks
  */
+import { config } from 'dotenv';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema, } from '@modelcontextprotocol/sdk/types.js';
 import { google } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
 import { promises as fs } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+// Load .env from the MCP server directory
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const envPath = join(__dirname, '..', '.env');
+config({ path: envPath });
 class GmailMCPServer {
     server;
     gmail;
@@ -25,9 +32,9 @@ class GmailMCPServer {
                 tools: {},
             },
         });
-        // Set up credential paths - you will need to provide these
-        this.credentialsPath = join(process.cwd(), 'credentials.json');
-        this.tokenPath = join(process.cwd(), 'token.json');
+        // Set up credential paths from environment variables or defaults
+        this.credentialsPath = process.env.GMAIL_CREDENTIALS_PATH || join(process.cwd(), 'credentials.json');
+        this.tokenPath = process.env.GMAIL_TOKEN_PATH || join(process.cwd(), 'token.json');
         this.setupToolHandlers();
     }
     async initializeGmailAPI() {
